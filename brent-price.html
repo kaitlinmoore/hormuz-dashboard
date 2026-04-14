@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brent Crude Price Tracker — Hormuz Crisis 2026</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: #0a0e17;
+    color: #c8d0dd;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 20px;
+  }
+
+  .container { width: 100%; max-width: 920px; }
+
+  .header { margin-bottom: 20px; }
+  .header h1 {
+    font-size: 22px; font-weight: 700; color: #f0f2f5;
+    letter-spacing: -0.3px; margin-bottom: 4px;
+  }
+  .header .subtitle { font-size: 13px; color: #6b7a90; }
+
+  .metrics {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 12px; margin-bottom: 20px;
+  }
+
+  .metric-card {
+    background: #111827; border: 1px solid #1e293b;
+    border-radius: 8px; padding: 14px 16px;
+  }
+  .metric-card .label {
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.6px; color: #5a6a7e; margin-bottom: 6px;
+  }
+  .metric-card .value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px; font-weight: 500; color: #f0f2f5;
+  }
+  .metric-card .change {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; margin-top: 4px;
+  }
+  .change.up { color: #ef4444; }
+  .change.down { color: #22c55e; }
+
+  .chart-wrap {
+    background: #111827; border: 1px solid #1e293b;
+    border-radius: 8px; padding: 20px 20px 16px; position: relative;
+  }
+  .chart-wrap canvas { width: 100% !important; height: 340px !important; }
+
+  .footer {
+    margin-top: 14px; font-size: 11px;
+    color: #3d4c5e; text-align: right;
+  }
+
+  .loading {
+    display: flex; align-items: center; justify-content: center;
+    height: 340px; color: #5a6a7e; font-size: 14px;
+  }
+
+  .error {
+    color: #ef4444; background: #1a0a0a; border: 1px solid #3b1111;
+    border-radius: 8px; padding: 16px; font-size: 13px; margin-bottom: 16px;
+  }
+  .error a { color: #ef4444; }
+
+  @media (max-width: 640px) {
+    .metrics { grid-template-columns: repeat(2, 1fr); }
+    .metric-card .value { font-size: 18px; }
+    .header h1 { font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>Brent Crude Oil — Hormuz Crisis Tracker</h1>
+    <div class="subtitle">Daily spot price (FOB), dollars per barrel · Source: U.S. Energy Information Administration</div>
+  </div>
+
+  <div id="error-box"></div>
+
+  <div class="metrics">
+    <div class="metric-card">
+      <div class="label">Latest Price</div>
+      <div class="value" id="m-latest">—</div>
+      <div class="change" id="m-latest-date" style="color:#5a6a7e"></div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Pre-Crisis (Feb 27)</div>
+      <div class="value" id="m-precrisis">—</div>
+      <div class="change" id="m-precrisis-label" style="color:#5a6a7e"></div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Crisis Change</div>
+      <div class="value" id="m-change">—</div>
+      <div class="change" id="m-change-pct"></div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Peak Price</div>
+      <div class="value" id="m-peak">—</div>
+      <div class="change" id="m-peak-date" style="color:#5a6a7e"></div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <div class="loading" id="loading">Fetching latest data from EIA…</div>
+    <canvas id="chart" style="display:none"></canvas>
+  </div>
+
+  <div class="footer">
+    Data: EIA API v2 | petroleum/pri/spt | Series RBRTE | Updated each business day
+    <br>Widget: Kaitlin Moore | CMU Heinz College | 90-434/834 Geospatial Health Analytics
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+//  CONFIGURATION
+// ═══════════════════════════════════════════════════════════════════════
+const API_KEY = new URLSearchParams(window.location.search).get('key') || 'YOUR_API_KEY_HERE';
+const START_DATE = '2026-01-01';
+const CRISIS_DATE = '2026-02-28';
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Helpers
+// ═══════════════════════════════════════════════════════════════════════
+function formatDate(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Fetch data from EIA API v2
+// ═══════════════════════════════════════════════════════════════════════
+async function fetchBrentPrices() {
+  const url = `https://api.eia.gov/v2/petroleum/pri/spt/data/`
+    + `?api_key=${API_KEY}`
+    + `&frequency=daily`
+    + `&data[]=value`
+    + `&facets[series][]=RBRTE`
+    + `&start=${START_DATE}`
+    + `&sort[0][column]=period`
+    + `&sort[0][direction]=asc`
+    + `&length=5000`;
+
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`EIA API returned ${response.status}`);
+
+  const json = await response.json();
+
+  if (!json.response || !json.response.data || json.response.data.length === 0) {
+    throw new Error('No data returned from EIA API. Check your API key.');
+  }
+
+  return json.response.data.map(d => ({
+    date: d.period,
+    price: parseFloat(d.value)
+  })).filter(d => !isNaN(d.price));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Compute metrics
+// ═══════════════════════════════════════════════════════════════════════
+function computeMetrics(data) {
+  const latest = data[data.length - 1];
+  const peak = data.reduce((max, d) => d.price > max.price ? d : max, data[0]);
+
+  let precrisis = null;
+  for (let i = data.length - 1; i >= 0; i--) {
+    if (data[i].date <= '2026-02-27') { precrisis = data[i]; break; }
+  }
+  if (!precrisis) precrisis = data[0];
+
+  const change = latest.price - precrisis.price;
+  const changePct = (change / precrisis.price) * 100;
+  return { latest, peak, precrisis, change, changePct };
+}
+
+function updateMetrics(m) {
+  document.getElementById('m-latest').textContent = `$${m.latest.price.toFixed(2)}`;
+  document.getElementById('m-latest-date').textContent = formatDate(m.latest.date);
+
+  document.getElementById('m-precrisis').textContent = `$${m.precrisis.price.toFixed(2)}`;
+  document.getElementById('m-precrisis-label').textContent = formatDate(m.precrisis.date);
+
+  document.getElementById('m-change').textContent =
+    `${m.change >= 0 ? '+' : ''}$${m.change.toFixed(2)}`;
+  document.getElementById('m-change').style.color = m.change >= 0 ? '#ef4444' : '#22c55e';
+  document.getElementById('m-change-pct').textContent =
+    `${m.changePct >= 0 ? '+' : ''}${m.changePct.toFixed(1)}%`;
+  document.getElementById('m-change-pct').className =
+    `change ${m.changePct >= 0 ? 'up' : 'down'}`;
+
+  document.getElementById('m-peak').textContent = `$${m.peak.price.toFixed(2)}`;
+  document.getElementById('m-peak-date').textContent = formatDate(m.peak.date);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Chart
+// ═══════════════════════════════════════════════════════════════════════
+function renderChart(data) {
+  const canvas = document.getElementById('chart');
+  document.getElementById('loading').style.display = 'none';
+  canvas.style.display = 'block';
+
+  const labels = data.map(d => d.date);
+  const prices = data.map(d => d.price);
+  const crisisIdx = data.findIndex(d => d.date >= CRISIS_DATE);
+
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, 0, 340);
+  gradient.addColorStop(0, 'rgba(239, 68, 68, 0.25)');
+  gradient.addColorStop(1, 'rgba(239, 68, 68, 0.0)');
+
+  // Show ~12 evenly spaced date labels.
+  const step = Math.max(1, Math.floor(data.length / 12));
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: prices,
+        borderWidth: 2.5,
+        pointRadius: 0,
+        pointHitRadius: 8,
+        tension: 0.2,
+        fill: true,
+        backgroundColor: (ctx) => {
+          const i = ctx.dataIndex;
+          return (i !== undefined && i >= crisisIdx) ? gradient : 'transparent';
+        },
+        segment: {
+          borderColor: (ctx) =>
+            ctx.p0DataIndex >= crisisIdx - 1 ? '#ef4444' : '#64748b',
+        },
+        borderColor: '#64748b',
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          titleColor: '#e2e8f0',
+          bodyColor: '#94a3b8',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleFont: { family: 'JetBrains Mono', size: 12 },
+          bodyFont: { family: 'JetBrains Mono', size: 13 },
+          padding: 10,
+          displayColors: false,
+          callbacks: {
+            title: (items) => {
+              if (!items.length) return '';
+              const dateStr = labels[items[0].dataIndex];
+              const d = new Date(dateStr + 'T00:00:00');
+              return d.toLocaleDateString('en-US', {
+                weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
+              });
+            },
+            label: (item) => `$${item.parsed.y.toFixed(2)} / bbl`
+          }
+        },
+      },
+      scales: {
+        x: {
+          type: 'category',
+          grid: { color: 'rgba(148, 163, 184, 0.06)', drawTicks: false },
+          ticks: {
+            color: '#475569',
+            font: { family: 'DM Sans', size: 11 },
+            maxRotation: 0,
+            padding: 8,
+            callback: function(value, index) {
+              if (index % step !== 0) return '';
+              return formatDate(this.getLabelForValue(value));
+            }
+          },
+          border: { display: false },
+        },
+        y: {
+          position: 'right',
+          grid: { color: 'rgba(148, 163, 184, 0.06)', drawTicks: false },
+          ticks: {
+            color: '#475569',
+            font: { family: 'JetBrains Mono', size: 11 },
+            callback: (v) => '$' + v,
+            padding: 8,
+          },
+          border: { display: false },
+          suggestedMin: 50,
+        }
+      }
+    },
+    plugins: [{
+      id: 'annotations',
+      afterDraw(chart) {
+        const { ctx, chartArea, scales } = chart;
+        const xScale = scales.x;
+        const yScale = scales.y;
+
+        // Crisis date vertical line
+        const cx = xScale.getPixelForValue(crisisIdx);
+        if (cx >= chartArea.left && cx <= chartArea.right) {
+          ctx.save();
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(cx, chartArea.top);
+          ctx.lineTo(cx, chartArea.bottom);
+          ctx.stroke();
+
+          ctx.fillStyle = '#f59e0b';
+          ctx.font = "500 10px 'DM Sans', sans-serif";
+          ctx.textAlign = 'left';
+          ctx.fillText('FEB 28 — STRIKES ON IRAN', cx + 6, chartArea.top + 14);
+          ctx.restore();
+        }
+
+        // $100 threshold
+        const hy = yScale.getPixelForValue(100);
+        if (hy >= chartArea.top && hy <= chartArea.bottom) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 3]);
+          ctx.beginPath();
+          ctx.moveTo(chartArea.left, hy);
+          ctx.lineTo(chartArea.right, hy);
+          ctx.stroke();
+
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.5)';
+          ctx.font = "500 10px 'JetBrains Mono', monospace";
+          ctx.textAlign = 'right';
+          ctx.fillText('$100', chartArea.right - 6, hy - 6);
+          ctx.restore();
+        }
+      }
+    }]
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Init
+// ═══════════════════════════════════════════════════════════════════════
+async function init() {
+  if (API_KEY === 'YOUR_API_KEY_HERE') {
+    document.getElementById('error-box').innerHTML =
+      '<div class="error">Pass your EIA API key via the URL: <strong>?key=YOUR_KEY</strong>. '
+      + 'Register free at <a href="https://www.eia.gov/opendata/">eia.gov/opendata</a></div>';
+    document.getElementById('loading').textContent = 'Waiting for API key…';
+    return;
+  }
+
+  try {
+    const data = await fetchBrentPrices();
+    const metrics = computeMetrics(data);
+    updateMetrics(metrics);
+    renderChart(data);
+  } catch (err) {
+    document.getElementById('error-box').innerHTML =
+      `<div class="error">Failed to load data: ${err.message}</div>`;
+    document.getElementById('loading').textContent = 'Error loading data';
+    console.error(err);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
