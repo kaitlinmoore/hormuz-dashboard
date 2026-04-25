@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPR Drawdown Tracker - Hormuz Crisis 2026</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+    color: #e0e0e0;
+    overflow: hidden;
+  }
+  #container {
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto;
+    background: #1a1a1a;
+    border-radius: 8px;
+    padding: 16px;
+    box-sizing: border-box;
+  }
+  h2 {
+    margin: 0 0 4px 0;
+    color: #f0f0f0;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .subtitle {
+    color: #888;
+    font-size: 13px;
+    margin-bottom: 14px;
+  }
+  .controls {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    padding: 10px;
+    background: #2a2a2a;
+    border-radius: 6px;
+  }
+  .control-group {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 180px;
+  }
+  .control-group label {
+    font-size: 11px;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  select {
+    background: #1a1a1a;
+    color: #f0f0f0;
+    border: 1px solid #444;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  input[type="range"] {
+    width: 100%;
+    accent-color: #c0392b;
+  }
+  .stat-box {
+    background: #1a1a1a;
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid #333;
+  }
+  .stat-label {
+    font-size: 10px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .stat-value {
+    font-size: 16px;
+    color: #f0f0f0;
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+  }
+  #map {
+    height: 480px;
+    background: #0a0a0a;
+    border-radius: 6px;
+  }
+  .legend {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 8px;
+    margin-top: 8px;
+    background: #2a2a2a;
+    border-radius: 6px;
+    font-size: 11px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .legend-swatch {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: 1px solid #444;
+  }
+  .leaflet-container {
+    background: #0a0a0a !important;
+  }
+  .leaflet-tooltip {
+    background: #1a1a1a !important;
+    border: 1px solid #555 !important;
+    color: #f0f0f0 !important;
+    font-size: 12px;
+  }
+  .leaflet-tooltip-top:before,
+  .leaflet-tooltip-bottom:before {
+    border-top-color: #555 !important;
+    border-bottom-color: #555 !important;
+  }
+  .country-label {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #ffffff !important;
+    font-size: 9px !important;
+    font-weight: 600 !important;
+    text-shadow: 0 0 3px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.9);
+    padding: 0 !important;
+  }
+  .country-label::before {
+    display: none !important;
+  }
+  .footer {
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: #2a2a2a;
+    border-radius: 6px;
+    font-size: 11px;
+    color: #888;
+    line-height: 1.5;
+  }
+  .footer strong {
+    color: #b0b0b0;
+  }
+</style>
+</head>
+<body>
+<div id="container">
+  <h2>SPR Drawdown Model: Hormuz Crisis 2026</h2>
+  <div class="subtitle">Modeled days of strategic petroleum reserve cover remaining, by country and crisis duration</div>
+
+  <div class="controls">
+    <div class="control-group">
+      <label for="scenario">Substitution Scenario</label>
+      <select id="scenario">
+        <option value="0.7">Limited Drawdown (70% substituted from other sources)</option>
+        <option value="0.5" selected>Moderate Drawdown (50% substituted)</option>
+        <option value="0.3">Heavy Drawdown (only 30% substituted)</option>
+      </select>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Date</div>
+      <div class="stat-value" id="dateDisplay">Feb 28, 2026</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Crisis Day</div>
+      <div class="stat-value" id="dayDisplay">0</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Countries Depleted</div>
+      <div class="stat-value" id="depletedDisplay">0 / 39</div>
+    </div>
+  </div>
+
+  <div style="margin-bottom: 10px;">
+    <input type="range" id="dateSlider" min="0" max="306" value="0" step="1">
+  </div>
+
+  <div id="map"></div>
+
+  <div class="legend">
+    <span style="color: #aaa; margin-right: 4px;"><strong>Days remaining:</strong></span>
+    <div class="legend-item"><div class="legend-swatch" style="background: #27ae60;"></div>180+</div>
+    <div class="legend-item"><div class="legend-swatch" style="background: #6ab04c;"></div>91–180</div>
+    <div class="legend-item"><div class="legend-swatch" style="background: #f1c40f;"></div>61–90</div>
+    <div class="legend-item"><div class="legend-swatch" style="background: #e67e22;"></div>31–60</div>
+    <div class="legend-item"><div class="legend-swatch" style="background: #c0392b;"></div>1–30</div>
+    <div class="legend-item"><div class="legend-swatch" style="background: #4a1414;"></div>Depleted</div>
+    <div class="legend-item"><div class="legend-swatch" style="background: #333;"></div>No SPR / No data</div>
+  </div>
+
+  <div class="footer">
+    <strong>Model assumptions:</strong> Each country's SPR depletes at a rate equal to its Middle East import share × (1 − substitution rate). Under Heavy Drawdown, countries can only substitute 30% of their lost Hormuz imports from other sources, so SPR depletes faster. Under Limited Drawdown, countries successfully substitute 70% from non-Hormuz sources, slowing SPR depletion. Baseline SPR cover and ME import share compiled from IEA, national energy agencies, UN Comtrade, and Vortexa. Model is illustrative; actual depletion depends on policy decisions, IEA coordinated releases, alternative supply routes, and demand reduction not captured here.
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// SPR baseline data (39 countries)
+const sprData = [
+  { iso: 'USA', name: "United States", sprDays: 60, meShare: 9.18 },
+  { iso: 'JPN', name: "Japan", sprDays: 254, meShare: 95.11 },
+  { iso: 'KOR', name: "South Korea", sprDays: 208, meShare: 71.34 },
+  { iso: 'DEU', name: "Germany", sprDays: 90, meShare: 7.44 },
+  { iso: 'FRA', name: "France", sprDays: 100, meShare: 10.32 },
+  { iso: 'ITA', name: "Italy", sprDays: 90, meShare: 14.13 },
+  { iso: 'ESP', name: "Spain", sprDays: 92, meShare: 8.10 },
+  { iso: 'GBR', name: "United Kingdom", sprDays: 90, meShare: 0.57 },
+  { iso: 'NLD', name: "Netherlands", sprDays: 90, meShare: 13.74 },
+  { iso: 'AUS', name: "Australia", sprDays: 50, meShare: 5.86 },
+  { iso: 'CAN', name: "Canada", sprDays: 0, meShare: 9.73 },
+  { iso: 'NOR', name: "Norway", sprDays: 0, meShare: 0.00 },
+  { iso: 'POL', name: "Poland", sprDays: 90, meShare: 52.93 },
+  { iso: 'GRC', name: "Greece", sprDays: 90, meShare: 39.93 },
+  { iso: 'TUR', name: "Turkey", sprDays: 90, meShare: 0.00 },
+  { iso: 'MEX', name: "Mexico", sprDays: 0, meShare: 0.00 },
+  { iso: 'CZE', name: "Czech Republic", sprDays: 100, meShare: 0.00 },
+  { iso: 'HUN', name: "Hungary", sprDays: 90, meShare: 0.00 },
+  { iso: 'NZL', name: "New Zealand", sprDays: 90, meShare: 0.00 },
+  { iso: 'AUT', name: "Austria", sprDays: 90, meShare: 14.15 },
+  { iso: 'BEL', name: "Belgium", sprDays: 90, meShare: 0.00 },
+  { iso: 'DNK', name: "Denmark", sprDays: 81, meShare: 0.00 },
+  { iso: 'FIN', name: "Finland", sprDays: 90, meShare: 0.00 },
+  { iso: 'IRL', name: "Ireland", sprDays: 100, meShare: 0.00 },
+  { iso: 'PRT', name: "Portugal", sprDays: 90, meShare: 0.00 },
+  { iso: 'SWE', name: "Sweden", sprDays: 90, meShare: 0.00 },
+  { iso: 'CHE', name: "Switzerland", sprDays: 135, meShare: 0.00 },
+  { iso: 'CHN', name: "China", sprDays: 120, meShare: 45.46 },
+  { iso: 'IND', name: "India", sprDays: 10, meShare: 46.47 },
+  { iso: 'TWN', name: "Taiwan", sprDays: 146, meShare: 69.24 },
+  { iso: 'THA', name: "Thailand", sprDays: 60, meShare: 58.83 },
+  { iso: 'SGP', name: "Singapore", sprDays: 0, meShare: 52.30 },
+  { iso: 'PHL', name: "Philippines", sprDays: 0, meShare: 95.17 },
+  { iso: 'PAK', name: "Pakistan", sprDays: 0, meShare: 99.61 },
+  { iso: 'BGD', name: "Bangladesh", sprDays: 0, meShare: 0.00 },
+  { iso: 'BRA', name: "Brazil", sprDays: 0, meShare: 21.99 },
+  { iso: 'ZAF', name: "South Africa", sprDays: 0, meShare: 16.89 },
+  { iso: 'IDN', name: "Indonesia", sprDays: 0, meShare: 20.55 },
+  { iso: 'VNM', name: "Vietnam", sprDays: 0, meShare: 84.97 },
+];
+
+const sprMap = {};
+sprData.forEach(d => sprMap[d.iso] = d);
+
+const CRISIS_START = new Date(2026, 1, 28); // Feb 28, 2026
+const END_DATE = new Date(2026, 11, 31); // Dec 31, 2026
+const TOTAL_DAYS = Math.floor((END_DATE - CRISIS_START) / (1000 * 60 * 60 * 24));
+
+// Color function
+function getColor(remainingDays, hasSpr) {
+  if (!hasSpr) return '#333';
+  if (remainingDays <= 0) return '#4a1414';
+  if (remainingDays < 31) return '#c0392b';
+  if (remainingDays < 61) return '#e67e22';
+  if (remainingDays < 91) return '#f1c40f';
+  if (remainingDays < 181) return '#6ab04c';
+  return '#27ae60';
+}
+
+// Calculate remaining days for a country at a given crisis day
+function calcRemaining(country, crisisDay, substitutionRate) {
+  if (country.sprDays === 0) return null; // No SPR
+  if (country.meShare === 0) return country.sprDays; // No exposure, no drawdown
+  // Burn rate = ME share fraction × (1 - substitution rate)
+  // i.e., what fraction of normal daily consumption must be replaced from SPR
+  const burnRate = (country.meShare / 100) * (1 - substitutionRate);
+  // Days depleted = crisisDay × burnRate
+  // (because each crisis day, we burn `burnRate` of one day's worth of SPR)
+  const daysDepleted = crisisDay * burnRate;
+  return Math.max(0, country.sprDays - daysDepleted);
+}
+
+// Initialize map
+const map = L.map('map', {
+  center: [25, 30],
+  zoom: 2,
+  worldCopyJump: false,
+  attributionControl: false,
+  scrollWheelZoom: false,
+  zoomControl: true,
+  minZoom: 2,
+  maxZoom: 5
+});
+
+// Dark basemap (Esri Dark Gray Canvas) - matches ArcGIS Pro style
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 19,
+  attribution: ''
+}).addTo(map);
+
+let geoJsonLayer = null;
+let currentDay = 0;
+let currentSubstitution = 0.5;
+
+// Format date helper
+function formatDate(daysSinceStart) {
+  const d = new Date(CRISIS_START);
+  d.setDate(d.getDate() + daysSinceStart);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// Helper: match a country feature to our SPR data via multiple properties
+const nameMap = {};
+sprData.forEach(d => {
+  nameMap[d.name.toLowerCase()] = d;
+  // Add alternate names commonly used in GeoJSON files
+  if (d.name === "United States") nameMap["united states of america"] = d;
+  if (d.name === "South Korea") nameMap["korea, south"] = d;
+  if (d.name === "Czech Republic") nameMap["czechia"] = d;
+});
+
+function findCountry(props) {
+  // Try ISO codes first
+  const isoFields = ['ISO_A3', 'iso_a3', 'ADM0_A3', 'adm0_a3', 'ISO3', 'iso3', 'id'];
+  for (const f of isoFields) {
+    if (props[f] && sprMap[props[f]]) return sprMap[props[f]];
+  }
+  // Try country name
+  const nameFields = ['ADMIN', 'admin', 'NAME', 'name', 'NAME_LONG', 'name_long', 'sovereignt', 'SOVEREIGNT'];
+  for (const f of nameFields) {
+    if (props[f] && nameMap[props[f].toLowerCase()]) return nameMap[props[f].toLowerCase()];
+  }
+  return null;
+}
+
+// Update map colors
+function updateMap() {
+  if (!geoJsonLayer) return;
+  let depleted = 0;
+  let totalWithSpr = 0;
+  geoJsonLayer.eachLayer(layer => {
+    const country = findCountry(layer.feature.properties);
+    if (country) {
+      if (country.sprDays > 0) totalWithSpr++;
+      const remaining = calcRemaining(country, currentDay, currentSubstitution);
+      const color = getColor(remaining, country.sprDays > 0);
+      if (remaining !== null && remaining <= 0) depleted++;
+      layer.setStyle({
+        fillColor: color,
+        fillOpacity: 0.85,
+        color: '#555',
+        weight: 0.5
+      });
+      // Detailed info on click (popup, doesn't conflict with permanent tooltip)
+      const popupText = country.sprDays === 0
+        ? `<strong>${country.name}</strong><br>No strategic reserve`
+        : `<strong>${country.name}</strong><br>Baseline: ${country.sprDays} days<br>ME share: ${country.meShare.toFixed(1)}%<br>Remaining: ${remaining !== null ? remaining.toFixed(0) : '—'} days`;
+      layer.bindPopup(popupText);
+      // Permanent label showing country name (only bind once)
+      if (!layer._hasPermanentLabel) {
+        layer.bindTooltip(country.name, {
+          permanent: true,
+          direction: 'center',
+          className: 'country-label',
+          opacity: 1
+        });
+        layer._hasPermanentLabel = true;
+      }
+    } else {
+      layer.setStyle({
+        fillColor: '#1a1a1a',
+        fillOpacity: 0.3,
+        color: '#333',
+        weight: 0.3
+      });
+    }
+  });
+  document.getElementById('depletedDisplay').textContent = `${depleted} / ${totalWithSpr}`;
+}
+
+// Load Natural Earth 110m countries GeoJSON (reliable source with ISO_A3 properties)
+fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson')
+  .then(r => r.json())
+  .then(data => {
+    geoJsonLayer = L.geoJSON(data, {
+      style: { fillColor: '#1a1a1a', fillOpacity: 0.3, color: '#333', weight: 0.3 }
+    }).addTo(map);
+    updateMap();
+  })
+  .catch(err => {
+    document.getElementById('map').innerHTML = '<p style="color:#888;padding:20px;">Map data unavailable. Please refresh.</p>';
+  });
+
+// Slider control
+const slider = document.getElementById('dateSlider');
+slider.max = TOTAL_DAYS;
+slider.addEventListener('input', e => {
+  currentDay = parseInt(e.target.value);
+  document.getElementById('dateDisplay').textContent = formatDate(currentDay);
+  document.getElementById('dayDisplay').textContent = currentDay;
+  updateMap();
+});
+
+// Scenario control
+document.getElementById('scenario').addEventListener('change', e => {
+  currentSubstitution = parseFloat(e.target.value);
+  updateMap();
+});
+</script>
+</body>
+</html>
