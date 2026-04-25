@@ -206,6 +206,7 @@
     <div class="legend-item"><div class="legend-swatch" style="background: #e67e22;"></div>31–60</div>
     <div class="legend-item"><div class="legend-swatch" style="background: #c0392b;"></div>1–30</div>
     <div class="legend-item"><div class="legend-swatch" style="background: #4a1414;"></div>Depleted</div>
+    <div class="legend-item"><div class="legend-swatch" style="background: #4a4458;"></div>Net exporter</div>
     <div class="legend-item"><div class="legend-swatch" style="background: #333;"></div>No SPR / No data</div>
   </div>
 
@@ -217,6 +218,8 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // SPR baseline data (39 countries)
+// Note: isNetExporter flag distinguishes countries that legitimately don't maintain
+// strategic reserves due to net exporter status from countries with no data
 const sprData = [
   { iso: 'USA', name: "United States", sprDays: 60, meShare: 9.18 },
   { iso: 'JPN', name: "Japan", sprDays: 254, meShare: 95.11 },
@@ -228,12 +231,12 @@ const sprData = [
   { iso: 'GBR', name: "United Kingdom", sprDays: 90, meShare: 0.57 },
   { iso: 'NLD', name: "Netherlands", sprDays: 90, meShare: 13.74 },
   { iso: 'AUS', name: "Australia", sprDays: 50, meShare: 5.86 },
-  { iso: 'CAN', name: "Canada", sprDays: 0, meShare: 9.73 },
-  { iso: 'NOR', name: "Norway", sprDays: 0, meShare: 0.00 },
+  { iso: 'CAN', name: "Canada", sprDays: 0, meShare: 9.73, isNetExporter: true },
+  { iso: 'NOR', name: "Norway", sprDays: 0, meShare: 0.00, isNetExporter: true },
   { iso: 'POL', name: "Poland", sprDays: 90, meShare: 52.93 },
   { iso: 'GRC', name: "Greece", sprDays: 90, meShare: 39.93 },
   { iso: 'TUR', name: "Turkey", sprDays: 90, meShare: 0.00 },
-  { iso: 'MEX', name: "Mexico", sprDays: 0, meShare: 0.00 },
+  { iso: 'MEX', name: "Mexico", sprDays: 0, meShare: 0.00, isNetExporter: true },
   { iso: 'CZE', name: "Czech Republic", sprDays: 100, meShare: 0.00 },
   { iso: 'HUN', name: "Hungary", sprDays: 90, meShare: 0.00 },
   { iso: 'NZL', name: "New Zealand", sprDays: 90, meShare: 0.00 },
@@ -267,8 +270,9 @@ const END_DATE = new Date(2026, 11, 31); // Dec 31, 2026
 const TOTAL_DAYS = Math.floor((END_DATE - CRISIS_START) / (1000 * 60 * 60 * 24));
 
 // Color function
-function getColor(remainingDays, hasSpr) {
-  if (!hasSpr) return '#333';
+function getColor(remainingDays, hasSpr, isNetExporter) {
+  if (isNetExporter) return '#4a4458'; // Net exporter - distinct purple-gray
+  if (!hasSpr) return '#333'; // No SPR data
   if (remainingDays <= 0) return '#4a1414';
   if (remainingDays < 31) return '#c0392b';
   if (remainingDays < 61) return '#e67e22';
@@ -353,7 +357,7 @@ function updateMap() {
     if (country) {
       if (country.sprDays > 0) totalWithSpr++;
       const remaining = calcRemaining(country, currentDay, currentSubstitution);
-      const color = getColor(remaining, country.sprDays > 0);
+      const color = getColor(remaining, country.sprDays > 0, country.isNetExporter);
       if (remaining !== null && remaining <= 0) depleted++;
       layer.setStyle({
         fillColor: color,
@@ -362,9 +366,14 @@ function updateMap() {
         weight: 0.5
       });
       // Detailed info on click (popup, doesn't conflict with permanent tooltip)
-      const popupText = country.sprDays === 0
-        ? `<strong>${country.name}</strong><br>No strategic reserve`
-        : `<strong>${country.name}</strong><br>Baseline: ${country.sprDays} days<br>ME share: ${country.meShare.toFixed(1)}%<br>Remaining: ${remaining !== null ? remaining.toFixed(0) : '—'} days`;
+      let popupText;
+      if (country.isNetExporter) {
+        popupText = `<strong>${country.name}</strong><br>Net oil exporter<br><em>No government SPR maintained</em>`;
+      } else if (country.sprDays === 0) {
+        popupText = `<strong>${country.name}</strong><br>No strategic reserve`;
+      } else {
+        popupText = `<strong>${country.name}</strong><br>Baseline: ${country.sprDays} days<br>ME share: ${country.meShare.toFixed(1)}%<br>Remaining: ${remaining !== null ? remaining.toFixed(0) : '—'} days`;
+      }
       layer.bindPopup(popupText);
       // Permanent label showing country name (only bind once)
       if (!layer._hasPermanentLabel) {
